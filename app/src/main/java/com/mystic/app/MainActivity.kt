@@ -50,6 +50,9 @@ private val supabase by lazy {
 @Serializable
 data class MysticPost(val id: Long, val username: String, val body: String)
 
+@Serializable
+data class NewMysticPost(val user_id: String, val username: String, val body: String)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +68,7 @@ private fun MysticScreen() {
     var signedIn by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var posts by remember { mutableStateOf<List<MysticPost>>(emptyList()) }
+    var postBody by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     MaterialTheme(colorScheme = darkColorScheme(
@@ -177,11 +181,57 @@ private fun MysticScreen() {
                         }) { Text("Sign out", color = ElectricBlue) }
                     }
                     Spacer(Modifier.height(16.dp))
+                    Column(
+                        Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(14.dp)
+                    ) {
+                        Text("Share something", color = Bright, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = postBody,
+                            onValueChange = { if (it.length <= 2000) postBody = it },
+                            label = { Text("What's on your mind?") },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 3,
+                            colors = fieldColors()
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                val body = postBody.trim()
+                                val userId = supabase.auth.currentUserOrNull()?.id
+                                if (body.isBlank()) {
+                                    status = "Write something before posting."
+                                } else if (userId == null) {
+                                    status = "Your session expired. Please sign in again."
+                                    signedIn = false
+                                } else {
+                                    busy = true
+                                    scope.launch {
+                                        try {
+                                            val username = email.trim().substringBefore("@").ifBlank { "mystic_user" }
+                                            supabase.from("posts").insert(
+                                                NewMysticPost(user_id = userId, username = username, body = body)
+                                            )
+                                            postBody = ""
+                                            posts = supabase.from("posts").select().decodeList<MysticPost>()
+                                            status = "Your post is live on MYSTIC!"
+                                        } catch (e: Exception) {
+                                            status = "Could not publish. Check the posts table and insert policy."
+                                        } finally { busy = false }
+                                    }
+                                }
+                            },
+                            enabled = !busy && postBody.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text(if (busy) "Publishing…" else "Publish post", fontWeight = FontWeight.Bold) }
+                    }
+                    Spacer(Modifier.height(12.dp))
                     if (posts.isEmpty()) {
                         Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(20.dp)) {
                             Text("Your feed starts here", color = Bright, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                             Spacer(Modifier.height(8.dp))
-                            Text("Add a row to the Supabase posts table, then tap refresh.", color = SoftText)
+                            Text("Be the first to share something with your people.", color = SoftText)
                             Spacer(Modifier.height(12.dp))
                             Button(onClick = {
                                 busy = true
